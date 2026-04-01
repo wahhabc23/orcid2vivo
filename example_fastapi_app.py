@@ -3,24 +3,24 @@ from pydantic import BaseModel
 from rdflib import Graph
 from orcid2vivo_app.fastapi_service import OrcidService
 from orcid2vivo_app.utility import sparql_insert, test_vivo_connection
-from orcid2vivo_app import config as app_config
 
 app = FastAPI(title="ORCID to VIVO Sync API")
 
-# Instantiate the service once at startup.  Configuration is read from
-# environment variables via orcid2vivo_app.config (with the values below as
-# hard-coded fallbacks for development convenience).
+# All settings are controlled here on OrcidService directly.
+# No environment variables or config file required.
 orcid_service = OrcidService(
-    namespace=app_config.VIVO_NAMESPACE,
-    vivo_query_endpoint=app_config.VIVO_SPARQL_QUERY_ENDPOINT,
-    vivo_username=app_config.VIVO_USERNAME,
-    vivo_password=app_config.VIVO_PASSWORD,
+    vivo_update_endpoint="http://localhost:8081/api/sparqlUpdate",
+    vivo_query_endpoint="http://localhost:8081/api/sparqlQuery",
+    vivo_username="admin@osp.com",
+    vivo_password="123456",
+    namespace="http://vivo.mydomain.edu/individual/",
+    use_crossref=True,
+    use_pubmed=True,
+    use_datacite=True,
+    # Uncomment and fill in to enable paid sources:
+    # scopus_api_key="your-scopus-key",
+    # wos_api_key="your-wos-key",
 )
-
-# VIVO connectivity settings – read from environment / config module.
-VIVO_ENDPOINT = app_config.VIVO_ENDPOINT
-VIVO_USERNAME = app_config.VIVO_USERNAME
-VIVO_PASSWORD = app_config.VIVO_PASSWORD
 
 
 class SyncRequest(BaseModel):
@@ -63,7 +63,11 @@ def sync_orcid(request: SyncRequest):
         # 3. Test VIVO connection before attempting insertion                  #
         # ------------------------------------------------------------------ #
         try:
-            test_vivo_connection(VIVO_ENDPOINT, VIVO_USERNAME, VIVO_PASSWORD)
+            test_vivo_connection(
+                orcid_service.vivo_update_endpoint,
+                orcid_service.config["vivo_username"],
+                orcid_service.config["vivo_password"],
+            )
         except RuntimeError as conn_err:
             raise HTTPException(
                 status_code=503,
@@ -73,7 +77,12 @@ def sync_orcid(request: SyncRequest):
         # ------------------------------------------------------------------ #
         # 4. Insert into VIVO via SPARQL Update                               #
         # ------------------------------------------------------------------ #
-        sparql_insert(graph, VIVO_ENDPOINT, VIVO_USERNAME, VIVO_PASSWORD)
+        sparql_insert(
+            graph,
+            orcid_service.vivo_update_endpoint,
+            orcid_service.config["vivo_username"],
+            orcid_service.config["vivo_password"],
+        )
 
         # ------------------------------------------------------------------ #
         # 5. Return success + VIVO author resource URI                        #

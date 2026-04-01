@@ -329,14 +329,20 @@ class WorksCrosswalk:
     @staticmethod
     def _fetch_crossref_doi(doi):
         # curl 'http://api.crossref.org/works/10.1177/1049732304268657' -L -i
-        r = requests.get('http://api.crossref.org/works/%s' % doi)
+        r = requests.get('http://api.crossref.org/works/%s' % doi,
+                         headers={"User-Agent": "orcid2vivo/1.0 (mailto:orcid2vivo@example.org)"},
+                         timeout=20)
         if r.status_code == 404:
             # Not a crossref DOI.
+            return {}
+        if r.status_code == 429:
+            # Rate-limited – skip enrichment for this DOI rather than crashing.
             return {}
         if r:
             return r.json()["message"]
         else:
-            raise Exception("Request to fetch DOI %s returned %s" % (doi, r.status_code))
+            # Log and skip on any other unexpected status code.
+            return {}
 
     @staticmethod
     def _parse_bibtex(work):
@@ -387,7 +393,7 @@ class WorksCrosswalk:
     @staticmethod
     def _get_bibtext_publication_date(bibtex):
         year = bibtex.get("year")
-        if year and not re.match("\d{4}", year):
+        if year and not re.match(r"\d{4}", year):
             year = None
         # Not going to try to parse month and day
         if not year:
@@ -417,7 +423,11 @@ class WorksCrosswalk:
     def _get_crossref_authors(doi_record):
         authors = []
         for author in doi_record.get("author", []):
-            authors.append((author["given"], author["family"], VIVO.Authorship))
+            # 'given' may be absent for organisations or single-name authors
+            given = author.get("given") or ""
+            family = author.get("family") or ""
+            if given or family:
+                authors.append((given, family, VIVO.Authorship))
         return authors
 
     @staticmethod

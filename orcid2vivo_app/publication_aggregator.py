@@ -23,8 +23,6 @@ import re
 import unicodedata
 from typing import List, Dict, Any, Optional
 
-from . import config
-
 logger = logging.getLogger(__name__)
 
 
@@ -32,35 +30,43 @@ logger = logging.getLogger(__name__)
 # Public API
 # ---------------------------------------------------------------------------
 
-def aggregate_publications(orcid_id: str) -> List[Dict[str, Any]]:
+def aggregate_publications(
+    orcid_id: str,
+    use_crossref: bool = True,
+    use_pubmed: bool = True,
+    use_datacite: bool = True,
+    scopus_api_key: Optional[str] = None,
+    wos_api_key: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """
     Query all enabled sources, merge, and deduplicate publications for *orcid_id*.
 
     :param orcid_id: Clean ORCID string such as '0000-0002-1825-0097'.
+    :param use_crossref: Query Crossref (free, default True).
+    :param use_pubmed: Query PubMed/NCBI (free, default True).
+    :param use_datacite: Query DataCite (free, default True).
+    :param scopus_api_key: Elsevier/Scopus API key. Supplying a non-empty key
+        enables Scopus retrieval automatically.
+    :param wos_api_key: Clarivate Web of Science API key. Supplying a non-empty
+        key enables WoS retrieval automatically.
     :return: Deduplicated list of enriched publication dicts.
     """
     raw: List[Dict[str, Any]] = []
 
-    if config.USE_CROSSREF:
+    if use_crossref:
         raw.extend(_safe_fetch("crossref", orcid_id))
 
-    if config.USE_PUBMED:
+    if use_pubmed:
         raw.extend(_safe_fetch("pubmed", orcid_id))
 
-    if config.USE_DATACITE:
+    if use_datacite:
         raw.extend(_safe_fetch("datacite", orcid_id))
 
-    if config.USE_SCOPUS and config.SCOPUS_API_KEY:
-        raw.extend(_safe_fetch("scopus", orcid_id, api_key=config.SCOPUS_API_KEY))
-    elif config.USE_SCOPUS:
-        logger.warning("Scopus enabled but SCOPUS_API_KEY is not set – skipping.")
+    if scopus_api_key:
+        raw.extend(_safe_fetch("scopus", orcid_id, api_key=scopus_api_key))
 
-    if config.USE_WEB_OF_SCIENCE and config.WEB_OF_SCIENCE_API_KEY:
-        raw.extend(_safe_fetch("webofscience", orcid_id, api_key=config.WEB_OF_SCIENCE_API_KEY))
-    elif config.USE_WEB_OF_SCIENCE:
-        logger.warning(
-            "Web of Science enabled but WEB_OF_SCIENCE_API_KEY is not set – skipping."
-        )
+    if wos_api_key:
+        raw.extend(_safe_fetch("webofscience", orcid_id, api_key=wos_api_key))
 
     logger.info(
         "Aggregated %d raw publication records from all sources for ORCID %s",

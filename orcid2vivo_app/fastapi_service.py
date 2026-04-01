@@ -7,7 +7,6 @@ from orcid2vivo_app.utility import get_or_create_author_uri
 from orcid2vivo_app.publication_aggregator import aggregate_publications
 from orcid2vivo_app.external_publications import add_external_publications_to_graph
 from orcid2vivo_app.vivo_uri import HashIdentifierStrategy
-from orcid2vivo_app import config as app_config
 
 logger = logging.getLogger(__name__)
 
@@ -20,31 +19,52 @@ class OrcidProcessingError(Exception):
 class OrcidService:
     def __init__(
         self,
-        use_cache: bool = True,
-        timeout: int = 10,
-        namespace: Optional[str] = None,
-        vivo_query_endpoint: Optional[str] = None,
-        vivo_username: Optional[str] = None,
-        vivo_password: Optional[str] = None,
+        # ── VIVO connectivity ────────────────────────────────────────────────
+        vivo_update_endpoint: str = "http://localhost:8081/api/sparqlUpdate",
+        vivo_query_endpoint: str = "http://localhost:8081/api/sparqlQuery",
+        vivo_username: str = "admin@osp.com",
+        vivo_password: str = "123456",
+        namespace: str = "http://vivo.mydomain.edu/individual/",
+        # ── Free publication sources ─────────────────────────────────────────
+        use_crossref: bool = True,
+        use_pubmed: bool = True,
+        use_datacite: bool = True,
+        # ── Paid publication sources (disabled until key is supplied) ────────
+        scopus_api_key: Optional[str] = None,
+        wos_api_key: Optional[str] = None,
     ):
         """
         Initialize the ORCID Service.
 
-        :param use_cache: Whether to use caching (stub concept for future use).
-        :param timeout: Timeout for remote requests.
-        :param namespace: The base VIVO namespace. Defaults to ``config.VIVO_NAMESPACE``.
-        :param vivo_query_endpoint: SPARQL SELECT endpoint used to look up existing
-            author URIs.  Defaults to ``config.VIVO_SPARQL_QUERY_ENDPOINT``.
-        :param vivo_username: VIVO admin username.  Defaults to ``config.VIVO_USERNAME``.
-        :param vivo_password: VIVO admin password.  Defaults to ``config.VIVO_PASSWORD``.
+        All parameters have sensible defaults so the service works out of the
+        box against a local VIVO instance.  Override any value when constructing
+        the service – no environment variables or config file required.
+
+        :param vivo_update_endpoint: SPARQL Update URL for inserting RDF into VIVO.
+        :param vivo_query_endpoint: SPARQL SELECT URL used to look up existing
+            author URIs in VIVO.
+        :param vivo_username: VIVO admin username.
+        :param vivo_password: VIVO admin password.
+        :param namespace: Base URI namespace for minting new VIVO individuals.
+        :param use_crossref: Query Crossref for publications (free).
+        :param use_pubmed: Query PubMed/NCBI for publications (free).
+        :param use_datacite: Query DataCite for publications (free).
+        :param scopus_api_key: Elsevier/Scopus API key.  Supplying a non-empty
+            key automatically enables Scopus retrieval.
+        :param wos_api_key: Clarivate Web of Science API key.  Supplying a
+            non-empty key automatically enables WoS retrieval.
         """
+        self.vivo_update_endpoint = vivo_update_endpoint
         self.config = {
-            "use_cache": use_cache,
-            "timeout": timeout,
-            "namespace": namespace or app_config.VIVO_NAMESPACE,
-            "vivo_query_endpoint": vivo_query_endpoint or app_config.VIVO_SPARQL_QUERY_ENDPOINT,
-            "vivo_username": vivo_username or app_config.VIVO_USERNAME,
-            "vivo_password": vivo_password or app_config.VIVO_PASSWORD,
+            "namespace": namespace,
+            "vivo_query_endpoint": vivo_query_endpoint,
+            "vivo_username": vivo_username,
+            "vivo_password": vivo_password,
+            "use_crossref": use_crossref,
+            "use_pubmed": use_pubmed,
+            "use_datacite": use_datacite,
+            "scopus_api_key": scopus_api_key or None,
+            "wos_api_key": wos_api_key or None,
         }
 
     def process_orcid(self, orcid_id: str) -> Dict[str, Any]:
@@ -97,7 +117,14 @@ class OrcidService:
             # ------------------------------------------------------------------
             from orcid2vivo_app.utility import clean_orcid
             clean_id = clean_orcid(orcid_id)
-            publications = aggregate_publications(clean_id)
+            publications = aggregate_publications(
+                clean_id,
+                use_crossref=self.config["use_crossref"],
+                use_pubmed=self.config["use_pubmed"],
+                use_datacite=self.config["use_datacite"],
+                scopus_api_key=self.config["scopus_api_key"],
+                wos_api_key=self.config["wos_api_key"],
+            )
 
             # ------------------------------------------------------------------
             # Step 4 – Add external publications to the graph
