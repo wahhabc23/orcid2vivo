@@ -1,8 +1,11 @@
-from rdflib import RDF, RDFS, XSD, Literal
+import logging
+from rdflib import RDF, RDFS, XSD, Literal, URIRef, Graph
 from .vivo_namespace import VIVO
 from numbers import Number
-from SPARQLWrapper import SPARQLWrapper
+from SPARQLWrapper import SPARQLWrapper, JSON, POST
 import re
+
+logger = logging.getLogger(__name__)
 
 
 def num_to_str(num):
@@ -199,6 +202,122 @@ def is_valid_orcid(orcid):
     Returns true if has correct syntax for an orcid.
     """
     # 0000-0003-1527-0030
-    if re.match("\d\d\d\d-\d\d\d\d-\d\d\d\d-\d\d\d[0-9X]$", orcid):
+    if re.match(r"\d\d\d\d-\d\d\d\d-\d\d\d\d-\d\d\d[0-9X]$", orcid):
         return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# VIVO connectivity helpers
+# ---------------------------------------------------------------------------
+
+def test_vivo_connection(endpoint: str, username: str, password: str) -> bool:
+    """
+    Test whether a VIVO SPARQL Update endpoint is reachable and credentials
+    are accepted.
+
+    The function issues a no-op SPARQL Update (inserting an empty graph) and
+    checks that no HTTP error is raised.  Any failure (connection error, bad
+    credentials, wrong endpoint) will be caught and logged.
+
+    :param endpoint: SPARQL Update URL, e.g.
+        ``http://localhost:8081/api/sparqlUpdate``
+    :param username: VIVO admin e-mail / username.
+    :param password: VIVO admin password.
+    :return: ``True`` if the connection and credentials are valid.
+    :raises RuntimeError: if the endpoint is unreachable or credentials are
+        rejected.
+    """
+    noop_query = "INSERT DATA { GRAPH <http://vitro.mannlib.cornell.edu/default/vitro-kb-2> { } }"
+    try:
+        sparql = SPARQLWrapper(endpoint)
+        sparql.addParameter("email", username)
+        sparql.addParameter("password", password)
+        sparql.setQuery(noop_query)
+        sparql.setMethod("POST")
+        sparql.query()
+        logger.info("VIVO connection test succeeded for endpoint %s", endpoint)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        msg = f"VIVO connection test failed for {endpoint}: {exc}"
+        logger.error(msg)
+        raise RuntimeError(msg) from exc
+
+
+def get_or_create_author_uri(
+    orcid_id: str,
+    query_endpoint: str,
+    username: str,
+    password: str,
+    namespace: str = "http://vivo.mydomain.edu/individual/",
+) -> str:
+    """
+    Return the VIVO individual URI associated with *orcid_id*.
+
+    First queries VIVO via SPARQL SELECT to see whether an individual already
+    has ``vivo:orcidId <http://orcid.org/{orcid_id}>``.  If found that URI is
+    returned directly.  Otherwise a new URI is minted using the same
+    :class:`~orcid2vivo_app.vivo_uri.HashIdentifierStrategy` used by the rest
+    of the package.
+
+    :param orcid_id: Clean ORCID string such as ``'0000-0002-1825-0097'``.
+    :param query_endpoint: SPARQL SELECT endpoint URL, e.g.
+        ``http://localhost:8081/api/sparqlQuery``.
+    :param username: VIVO admin e-mail / username.
+    :param password: VIVO admin password.
+    :param namespace: Base VIVO namespace for minting new URIs.
+    :return: Absolute URI string for the author individual.
+    """
+    orcid_uri = f"http://orcid.org/{orcid_id}"
+    ask_query = (
+        "PREFIX vivo: <http://vivoweb.org/ontology/core#>\n"
+        "SELECT ?person WHERE {\n"
+        f"  ?person vivo:orcidId <{orcid_uri}> .\n"
+        "} LIMIT 1"
+    )
+    try:
+        sparql = SPARQLWrapper(query_endpoint)
+        sparql.addParameter("email", username)
+        sparql.addParameter("password", password)
+        sparql.setQuery(ask_query)
+        sparql.setReturnFormat(JSON)
+        sparql.setMethod(POST)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+        if bindings:
+            existing_uri = bindings[0].get("person", {}).get("value")
+            if existing_uri:
+                logger.info(
+                    "Found existing VIVO URI %s for ORCID %s", existing_uri, orcid_id
+                )
+                return existing_uri
+    except Exception as exc:  # noqa: BLE001
+        # Non-fatal – fall through to mint a new URI
+        logger.warning(
+            "Could not query VIVO for existing URI (ORCID %s): %s – "
+            "a new URI will be minted.",
+            orcid_id,
+            exc,
+        )
+
+    # Mint a new URI using the same strategy as the rest of the package
+    from .vivo_uri import HashIdentifierStrategy
+    from . import vivo_namespace as ns
+    from rdflib.namespace import Namespace
+
+    # Temporarily switch the data namespace to the requested one so the
+    # minted URI lands in the right namespace.
+    original_d = ns.D
+    ns.D = Namespace(namespace)
+    ns.ns_manager.bind("d", ns.D, replace=True)
+
+    strategy = HashIdentifierStrategy()
+    from .vivo_namespace import FOAF
+    new_uri = str(strategy.to_uri(FOAF.Person, {"id": orcid_id}))
+
+    # Restore original namespace
+    ns.D = original_d
+    ns.ns_manager.bind("d", ns.D, replace=True)
+
+    logger.info("Minted new VIVO URI %s for ORCID %s", new_uri, orcid_id)
+    return new_uri
