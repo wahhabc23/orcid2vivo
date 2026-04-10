@@ -190,29 +190,47 @@ class WorksCrosswalk:
                     contributors.append((None, None, VIVO.Authorship))
 
             for (first_name, surname, vivo_type) in contributors:
-                if not surname or person_surname.lower() == surname.lower():
-                    contributor_uri = person_uri
-                else:
-                    contributor_uri = self.identifier_strategy.to_uri(FOAF.Person, {"first_name": first_name,
-                                                                                    "surname": surname})
-                    if self.create_strategy.should_create(FOAF.Person, contributor_uri):
-                        graph.add((contributor_uri, RDF.type, FOAF.Person))
-                        full_name = join_if_not_empty((first_name, surname))
-                        graph.add((contributor_uri, RDFS.label, Literal(full_name)))
+                is_main_author = not surname or person_surname.lower() == surname.lower()
 
-                # Translation is a special case
-                if vivo_type == "TRANSLATOR":
-                    graph.add((contributor_uri, BIBO.translator, work_uri))
-                # So is patent assignee
-                elif work_type == "PATENT":
-                    graph.add((contributor_uri, VIVO.assigneeFor, work_uri))
+                if is_main_author:
+                    contributor_uri = person_uri
+                    # Translation is a special case
+                    if vivo_type == "TRANSLATOR":
+                        graph.add((contributor_uri, BIBO.translator, work_uri))
+                    # So is patent assignee
+                    elif work_type == "PATENT":
+                        graph.add((contributor_uri, VIVO.assigneeFor, work_uri))
+                    else:
+                        contributorship_uri = self.identifier_strategy.to_uri(vivo_type,
+                                                                              {"contributor_uri": contributor_uri,
+                                                                               "work_uri": work_uri})
+                        graph.add((contributorship_uri, RDF.type, vivo_type))
+                        graph.add((contributorship_uri, VIVO.relates, work_uri))
+                        graph.add((contributorship_uri, VIVO.relates, contributor_uri))
                 else:
-                    contributorship_uri = self.identifier_strategy.to_uri(vivo_type,
-                                                                          {"contributor_uri": contributor_uri,
-                                                                           "work_uri": work_uri})
-                    graph.add((contributorship_uri, RDF.type, vivo_type))
-                    graph.add((contributorship_uri, VIVO.relates, work_uri))
-                    graph.add((contributorship_uri, VIVO.relates, contributor_uri))
+                    if vivo_type == "TRANSLATOR" or work_type == "PATENT":
+                        continue
+                    else:
+                        name_hash = {"first_name": first_name, "surname": surname}
+                        vcard_uri = self.identifier_strategy.to_uri(VCARD.Kind, name_hash)
+
+                        contributorship_uri = self.identifier_strategy.to_uri(vivo_type,
+                                                                              {"contributor_uri": vcard_uri,
+                                                                               "work_uri": work_uri})
+
+                        graph.add((contributorship_uri, RDF.type, vivo_type))
+                        graph.add((contributorship_uri, VIVO.relates, work_uri))
+                        graph.add((contributorship_uri, VIVO.relates, vcard_uri))
+
+                        if self.create_strategy.should_create(VCARD.Kind, vcard_uri):
+                            graph.add((vcard_uri, RDF.type, VCARD.Kind))
+                            vcard_name_uri = self.identifier_strategy.to_uri(VCARD.Name, name_hash)
+                            graph.add((vcard_name_uri, RDF.type, VCARD.Name))
+                            graph.add((vcard_uri, VCARD.hasName, vcard_name_uri))
+                            if surname:
+                                graph.add((vcard_name_uri, VCARD.familyName, Literal(surname)))
+                            if first_name:
+                                graph.add((vcard_name_uri, VCARD.givenName, Literal(first_name)))
 
             # Publisher
             publisher = crossref_record.get("publisher") or bibtex.get("publisher")
