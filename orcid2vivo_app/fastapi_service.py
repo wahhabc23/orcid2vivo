@@ -25,6 +25,7 @@ class OrcidService:
         vivo_username: str = "admin@osp.com",
         vivo_password: str = "123456",
         namespace: str = "http://vivo.mydomain.edu/individual/",
+        confirm_orcid: bool = True,
         # ── Free publication sources ─────────────────────────────────────────
         use_crossref: bool = True,
         use_pubmed: bool = True,
@@ -57,6 +58,7 @@ class OrcidService:
         self.vivo_update_endpoint = vivo_update_endpoint
         self.config = {
             "namespace": namespace,
+            "confirm_orcid": confirm_orcid,
             "vivo_query_endpoint": vivo_query_endpoint,
             "vivo_username": vivo_username,
             "vivo_password": vivo_password,
@@ -109,7 +111,7 @@ class OrcidService:
                 person_id=None,
                 skip_person=False,
                 person_class=None,
-                confirmed_orcid_id=False,
+                confirmed_orcid_id=self.config.get("confirm_orcid", True),
             )
 
             # ------------------------------------------------------------------
