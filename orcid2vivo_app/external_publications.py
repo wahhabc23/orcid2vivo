@@ -55,6 +55,7 @@ def add_external_publications_to_graph(
     person_uri: URIRef,
     graph: Graph,
     identifier_strategy,
+    doi_lookup_fn=None,
 ) -> None:
     """
     Add VIVO/BIBO triples for *publications* to *graph*.
@@ -63,10 +64,11 @@ def add_external_publications_to_graph(
     :param person_uri: VIVO URI for the author individual.
     :param graph: Target rdflib Graph (modified in place).
     :param identifier_strategy: Strategy object exposing ``to_uri(clazz, attrs)``.
+    :param doi_lookup_fn: Optional function to lookup existing URI by DOI.
     """
     for pub in publications:
         try:
-            _add_publication(pub, person_uri, graph, identifier_strategy)
+            _add_publication(pub, person_uri, graph, identifier_strategy, doi_lookup_fn)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not add external publication to graph: %s – %s", pub.get("title"), exc)
 
@@ -80,6 +82,7 @@ def _add_publication(
     person_uri: URIRef,
     graph: Graph,
     identifier_strategy,
+    doi_lookup_fn=None,
 ) -> None:
     title = pub.get("title") or ""
     if not title:
@@ -103,7 +106,15 @@ def _add_publication(
         "pmid": pmid or "",
         "title": title,
     }
-    pub_uri = identifier_strategy.to_uri(BIBO.Document, pub_attrs)
+    
+    pub_uri_str = None
+    if doi and doi_lookup_fn:
+        pub_uri_str = doi_lookup_fn(doi)
+    
+    if pub_uri_str:
+        pub_uri = URIRef(pub_uri_str)
+    else:
+        pub_uri = identifier_strategy.to_uri(BIBO.Document, pub_attrs)
 
     # Core triples
     graph.add((pub_uri, RDF.type, bibo_class))

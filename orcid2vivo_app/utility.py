@@ -457,3 +457,33 @@ def create_author_uri(
         logger.warning("Could not create author in VIVO: %s", exc)
 
     return new_uri
+
+
+def get_work_uri_by_doi(doi: str, query_endpoint: str, username: str, password: str) -> str:
+    """
+    Queries VIVO for an existing publication (bibo:Document) with the given DOI.
+    Returns its URI if found, or None otherwise.
+    """
+    query = (
+        "PREFIX bibo: <http://purl.org/ontology/bibo/>\n"
+        "SELECT ?work WHERE {\n"
+        f'  ?work bibo:doi "{doi}" .\n'
+        "} LIMIT 1"
+    )
+    try:
+        sparql = SPARQLWrapper(query_endpoint)
+        sparql.addParameter("email", username)
+        sparql.addParameter("password", password)
+        sparql.setQuery(query)
+        sparql.setReturnFormat(JSON)
+        sparql.setMethod(POST)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+        if bindings:
+            uri = bindings[0].get("work", {}).get("value")
+            if uri:
+                logger.info("Found existing VIVO URI %s for DOI %s", uri, doi)
+                return uri
+    except Exception as exc:
+        logger.warning("Could not query VIVO for existing work with DOI %s: %s", doi, exc)
+    return None

@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 
 # Import the core crosswalk executor without executing the argparse/CLI code
 from orcid2vivo import default_execute
-from orcid2vivo_app.utility import get_or_create_author_uri, attach_identity_properties
+from orcid2vivo_app.utility import get_or_create_author_uri, attach_identity_properties, get_work_uri_by_doi
 from orcid2vivo_app.publication_aggregator import aggregate_publications
 from orcid2vivo_app.external_publications import add_external_publications_to_graph
 from orcid2vivo_app.vivo_uri import HashIdentifierStrategy
@@ -114,6 +114,14 @@ class OrcidService:
                 google_scholar_id=google_scholar_id,
             )
 
+            def doi_lookup_fn(doi: str) -> str:
+                return get_work_uri_by_doi(
+                    doi=doi,
+                    query_endpoint=self.config["vivo_query_endpoint"],
+                    username=self.config["vivo_username"],
+                    password=self.config["vivo_password"],
+                )
+
             # ------------------------------------------------------------------
             # Step 2 – Core ORCID crosswalk (bio, affiliations, fundings, works)
             # ------------------------------------------------------------------
@@ -125,6 +133,7 @@ class OrcidService:
                 skip_person=False,
                 person_class=None,
                 confirmed_orcid_id=self.config.get("confirm_orcid", True),
+                doi_lookup_fn=doi_lookup_fn,
             )
 
             # ------------------------------------------------------------------
@@ -150,6 +159,7 @@ class OrcidService:
                 person_uri=person_uri,
                 graph=graph,
                 identifier_strategy=identifier_strategy,
+                doi_lookup_fn=doi_lookup_fn,
             )
 
             logger.info(

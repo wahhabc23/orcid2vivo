@@ -52,13 +52,13 @@ class SimpleCreateEntitiesStrategy():
 
 
 class PersonCrosswalk():
-    def __init__(self, identifier_strategy, create_strategy):
+    def __init__(self, identifier_strategy, create_strategy, doi_lookup_fn=None):
         self.identifier_strategy = identifier_strategy
         self.create_strategy = create_strategy
         self.bio_crosswalker = BioCrosswalk(identifier_strategy, create_strategy)
         self.affiliations_crosswalker = AffiliationsCrosswalk(identifier_strategy, create_strategy)
         self.funding_crosswalker = FundingCrosswalk(identifier_strategy, create_strategy)
-        self.works_crosswalker = WorksCrosswalk(identifier_strategy, create_strategy)
+        self.works_crosswalker = WorksCrosswalk(identifier_strategy, create_strategy, doi_lookup_fn=doi_lookup_fn)
 
     def crosswalk(self, orcid_id, person_uri, person_class=None, confirmed_orcid_id=False):
 
@@ -111,7 +111,7 @@ def set_namespace(namespace=None):
 
 
 def default_execute(orcid_id, namespace=None, person_uri=None, person_id=None, skip_person=False, person_class=None,
-                    confirmed_orcid_id=False):
+                    confirmed_orcid_id=False, doi_lookup_fn=None):
     # Set namespace
     set_namespace(namespace)
 
@@ -123,7 +123,7 @@ def default_execute(orcid_id, namespace=None, person_uri=None, person_id=None, s
     this_create_strategy = SimpleCreateEntitiesStrategy(this_identifier_strategy, skip_person=skip_person,
                                                         person_uri=this_person_uri)
 
-    crosswalker = PersonCrosswalk(create_strategy=this_create_strategy, identifier_strategy=this_create_strategy)
+    crosswalker = PersonCrosswalk(create_strategy=this_create_strategy, identifier_strategy=this_create_strategy, doi_lookup_fn=doi_lookup_fn)
     return crosswalker.crosswalk(orcid_id, this_person_uri, person_class=person_class,
                                  confirmed_orcid_id=confirmed_orcid_id)
 

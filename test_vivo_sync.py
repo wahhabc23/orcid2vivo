@@ -10,9 +10,10 @@ def sync_orcid_to_vivo(orcid_id: str):
     vivo_endpoint = "http://localhost:8081/api/sparqlUpdate"
     username = "admin@osp.com"
     password = "123456"
+    name_space = "http://192.168.168.167:8081/individual/"
 
     print(f"1. Fetching ORCID profile for: {orcid_id}")
-    service = OrcidService()
+    service = OrcidService(namespace=name_space)
     # Ensure this doesn't crash on invalid ORCIDs
     try:
         result = service.process_orcid(orcid_id)
@@ -39,4 +40,4 @@ def sync_orcid_to_vivo(orcid_id: str):
 
 if __name__ == "__main__":
     # Test with a public sample ORCID ID
-    sync_orcid_to_vivo("0000-0002-1825-0097")
+    sync_orcid_to_vivo("0000-0001-9735-2691")

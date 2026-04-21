@@ -84,9 +84,10 @@ bibtex_type_map = {
 
 
 class WorksCrosswalk:
-    def __init__(self, identifier_strategy, create_strategy):
+    def __init__(self, identifier_strategy, create_strategy, doi_lookup_fn=None):
         self.identifier_strategy = identifier_strategy
         self.create_strategy = create_strategy
+        self.doi_lookup_fn = doi_lookup_fn
 
     def crosswalk(self, orcid_profile, person_uri, graph):
         # Work metadata may be available from the orcid profile, bibtex contained in the orcid profile, and/or crossref
@@ -141,7 +142,14 @@ class WorksCrosswalk:
                 work_class = bibtex_type_map[bibtex["ENTRYTYPE"]]
 
             # Construct work uri
-            work_uri = self.identifier_strategy.to_uri(work_class, {"name": title})
+            work_uri = None
+            if doi and self.doi_lookup_fn:
+                uri_str = self.doi_lookup_fn(doi)
+                if uri_str:
+                    from rdflib import URIRef
+                    work_uri = URIRef(uri_str)
+            if not work_uri:
+                work_uri = self.identifier_strategy.to_uri(work_class, {"name": title})
 
             graph.add((work_uri, RDF.type, work_class))
 
