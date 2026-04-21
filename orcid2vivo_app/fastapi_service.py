@@ -69,7 +69,7 @@ class OrcidService:
             "wos_api_key": wos_api_key or None,
         }
 
-    def process_orcid(self, orcid_id: str) -> Dict[str, Any]:
+    def process_orcid(self, orcid_id: str, existing_uri=None) -> Dict[str, Any]:
         """
         Full ORCID-to-VIVO pipeline.
 
@@ -93,13 +93,22 @@ class OrcidService:
             # ------------------------------------------------------------------
             # Step 1 – Resolve / mint author URI
             # ------------------------------------------------------------------
-            resolved_uri = get_or_create_author_uri(
-                orcid_id=orcid_id,
-                query_endpoint=self.config["vivo_query_endpoint"],
-                username=self.config["vivo_username"],
-                password=self.config["vivo_password"],
-                namespace=namespace,
-            )
+            resolved_uri = existing_uri
+
+            if resolved_uri:
+                logger.info(
+                    "Using provided existing URI for ORCID %s: %s",
+                    orcid_id,
+                    resolved_uri,
+                )
+            else:
+                resolved_uri = get_or_create_author_uri(
+                    orcid_id=orcid_id,
+                    query_endpoint=self.config["vivo_query_endpoint"],
+                    username=self.config["vivo_username"],
+                    password=self.config["vivo_password"],
+                    namespace=namespace,
+                )
 
             # ------------------------------------------------------------------
             # Step 2 – Core ORCID crosswalk (bio, affiliations, fundings, works)
