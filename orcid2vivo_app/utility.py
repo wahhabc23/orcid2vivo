@@ -250,6 +250,8 @@ def get_or_create_author_uri(
     username: str,
     password: str,
     namespace: str = "http://vivo.mydomain.edu/individual/",
+    existing_uri: str = None,
+    update_endpoint: str = None,
 ) -> str:
     """
     Return the VIVO individual URI associated with *orcid_id*.
@@ -266,8 +268,34 @@ def get_or_create_author_uri(
     :param username: VIVO admin e-mail / username.
     :param password: VIVO admin password.
     :param namespace: Base VIVO namespace for minting new URIs.
+    :param existing_uri: An existing URI to use. If provided, the ORCID will be attached to it.
+    :param update_endpoint: SPARQL Update URL for attaching the ORCID to an existing URI.
     :return: Absolute URI string for the author individual.
     """
+    if existing_uri:
+        logger.info("Using existing URI %s and attaching ORCID %s", existing_uri, orcid_id)
+        endpoint = update_endpoint or query_endpoint.replace("sparqlQuery", "sparqlUpdate").replace("query", "update")
+        orcid_uri = f"http://orcid.org/{orcid_id}"
+        update_query = (
+            "PREFIX vivo: <http://vivoweb.org/ontology/core#>\n"
+            "WITH <http://vitro.mannlib.cornell.edu/default/vitro-kb-2>\n"
+            "DELETE {\n"
+            f"  <{existing_uri}> vivo:orcidId ?oldOrcid .\n"
+            "}\n"
+            "INSERT {\n"
+            f"  <{existing_uri}> vivo:orcidId <{orcid_uri}> .\n"
+            "}\n"
+            "WHERE {\n"
+            f"  OPTIONAL {{ <{existing_uri}> vivo:orcidId ?oldOrcid . }}\n"
+            "}"
+        )
+        try:
+            sparql_update(update_query, endpoint, username, password)
+            logger.info("Attached ORCID %s to existing URI %s", orcid_id, existing_uri)
+        except Exception as exc:
+            logger.warning("Could not attach ORCID to existing URI: %s", exc)
+        return existing_uri
+
     orcid_uri = f"http://orcid.org/{orcid_id}"
     ask_query = (
         "PREFIX vivo: <http://vivoweb.org/ontology/core#>\n"
@@ -320,4 +348,112 @@ def get_or_create_author_uri(
     ns.ns_manager.bind("d", ns.D, replace=True)
 
     logger.info("Minted new VIVO URI %s for ORCID %s", new_uri, orcid_id)
+    return new_uri
+
+
+def attach_identity_properties(
+    uri: str,
+    update_endpoint: str,
+    username: str,
+    password: str,
+    vidwan_id: str = None,
+    scopus_id: str = None,
+    wos_id: str = None,
+    google_scholar_id: str = None,
+):
+    """
+    Attaches identity properties to an existing URI in VIVO.
+    Any existing values for the provided properties will be removed first
+    to avoid duplication.
+    """
+    properties = []
+    if scopus_id:
+        properties.append(("<http://vivoweb.org/ontology/core#scopusId>", scopus_id))
+    if wos_id:
+        properties.append(("<http://vivoweb.org/ontology/core#researcherId>", wos_id))
+    if google_scholar_id:
+        properties.append(("<http://aufait.com/ontology#googleScholarId>", google_scholar_id))
+    if vidwan_id:
+        properties.append(("<http://aufait.com/ontology#vidwanId>", vidwan_id))
+
+    if not properties:
+        return
+
+    deletes = []
+    inserts = []
+    optionals = []
+
+    for i, (prop, value) in enumerate(properties):
+        var_name = f"?oldVal{i}"
+        deletes.append(f"  <{uri}> {prop} {var_name} .")
+        optionals.append(f"  OPTIONAL {{ <{uri}> {prop} {var_name} . }}")
+        
+        safe_val = str(value).replace('"', '\\"')
+        inserts.append(f'  <{uri}> {prop} "{safe_val}" .')
+
+    delete_str = "\n".join(deletes)
+    insert_str = "\n".join(inserts)
+    optional_str = "\n".join(optionals)
+
+    update_query = (
+        "WITH <http://vitro.mannlib.cornell.edu/default/vitro-kb-2>\n"
+        "DELETE {\n"
+        f"{delete_str}\n"
+        "}\n"
+        "INSERT {\n"
+        f"{insert_str}\n"
+        "}\n"
+        "WHERE {\n"
+        f"{optional_str}\n"
+        "}"
+    )
+
+    try:
+        sparql_update(update_query, update_endpoint, username, password)
+        logger.info("Attached identity properties to URI %s", uri)
+    except Exception as exc:
+        logger.warning("Could not attach identity properties to URI %s: %s", uri, exc)
+
+
+def create_author_uri(
+    unique_id: str, 
+    query_endpoint: str, 
+    username: str, 
+    password: str, 
+    namespace: str = "http://vivo.mydomain.edu/individual/",
+    update_endpoint: str = None
+) -> str:
+    """
+    Creates an author in VIVO and returns the minted URI.
+    """
+    from .vivo_uri import HashIdentifierStrategy
+    from . import vivo_namespace as ns
+    from rdflib.namespace import Namespace
+    from .vivo_namespace import FOAF
+
+    original_d = ns.D
+    ns.D = Namespace(namespace)
+    ns.ns_manager.bind("d", ns.D, replace=True)
+
+    strategy = HashIdentifierStrategy()
+    new_uri = str(strategy.to_uri(FOAF.Person, {"id": unique_id}))
+
+    ns.D = original_d
+    ns.ns_manager.bind("d", ns.D, replace=True)
+
+    logger.info("Minted new VIVO URI %s for unique_id %s", new_uri, unique_id)
+    
+    endpoint = update_endpoint or query_endpoint.replace("sparqlQuery", "sparqlUpdate").replace("query", "update")
+    insert_query = (
+        "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n"
+        "INSERT DATA { GRAPH <http://vitro.mannlib.cornell.edu/default/vitro-kb-2> {\n"
+        f"  <{new_uri}> a foaf:Person .\n"
+        "} }"
+    )
+    try:
+        sparql_update(insert_query, endpoint, username, password)
+        logger.info("Created author in VIVO with URI %s", new_uri)
+    except Exception as exc:
+        logger.warning("Could not create author in VIVO: %s", exc)
+
     return new_uri

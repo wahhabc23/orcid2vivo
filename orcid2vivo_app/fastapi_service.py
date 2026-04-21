@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 
 # Import the core crosswalk executor without executing the argparse/CLI code
 from orcid2vivo import default_execute
-from orcid2vivo_app.utility import get_or_create_author_uri
+from orcid2vivo_app.utility import get_or_create_author_uri, attach_identity_properties
 from orcid2vivo_app.publication_aggregator import aggregate_publications
 from orcid2vivo_app.external_publications import add_external_publications_to_graph
 from orcid2vivo_app.vivo_uri import HashIdentifierStrategy
@@ -69,7 +69,7 @@ class OrcidService:
             "wos_api_key": wos_api_key or None,
         }
 
-    def process_orcid(self, orcid_id: str, existing_uri=None) -> Dict[str, Any]:
+    def process_orcid(self, orcid_id: str, existing_uri=None, vidwan_id=None, scopus_id=None, wos_id=None, google_scholar_id=None) -> Dict[str, Any]:
         """
         Full ORCID-to-VIVO pipeline.
 
@@ -93,22 +93,26 @@ class OrcidService:
             # ------------------------------------------------------------------
             # Step 1 – Resolve / mint author URI
             # ------------------------------------------------------------------
-            resolved_uri = existing_uri
+            resolved_uri = get_or_create_author_uri(
+                orcid_id=orcid_id,
+                query_endpoint=self.config["vivo_query_endpoint"],
+                username=self.config["vivo_username"],
+                password=self.config["vivo_password"],
+                namespace=namespace,
+                existing_uri=existing_uri,
+                update_endpoint=self.vivo_update_endpoint,
+            )
 
-            if resolved_uri:
-                logger.info(
-                    "Using provided existing URI for ORCID %s: %s",
-                    orcid_id,
-                    resolved_uri,
-                )
-            else:
-                resolved_uri = get_or_create_author_uri(
-                    orcid_id=orcid_id,
-                    query_endpoint=self.config["vivo_query_endpoint"],
-                    username=self.config["vivo_username"],
-                    password=self.config["vivo_password"],
-                    namespace=namespace,
-                )
+            attach_identity_properties(
+                uri=resolved_uri,
+                update_endpoint=self.vivo_update_endpoint,
+                username=self.config["vivo_username"],
+                password=self.config["vivo_password"],
+                vidwan_id=vidwan_id,
+                scopus_id=scopus_id,
+                wos_id=wos_id,
+                google_scholar_id=google_scholar_id,
+            )
 
             # ------------------------------------------------------------------
             # Step 2 – Core ORCID crosswalk (bio, affiliations, fundings, works)
