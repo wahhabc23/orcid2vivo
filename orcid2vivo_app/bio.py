@@ -1,6 +1,6 @@
 from .vivo_namespace import VIVO
 from rdflib import RDFS, RDF, Literal, XSD
-from .utility import join_if_not_empty
+from .utility import join_if_not_empty, safe_get
 from .vivo_namespace import VCARD, OBO, FOAF
 
 
@@ -16,8 +16,8 @@ class BioCrosswalk:
         family_name = None
         if "name" in orcid_profile["person"]:
             person_details = orcid_profile["person"]["name"]
-            given_names = person_details.get("given-names", {}).get("value")
-            family_name = person_details.get("family-name", {}).get("value")
+            given_names = safe_get(person_details, "given-names", "value")
+            family_name = safe_get(person_details, "family-name", "value")
             full_name = join_if_not_empty((given_names, family_name))
 
             # Following is non-vcard bio information
@@ -29,35 +29,29 @@ class BioCrosswalk:
                 graph.add((person_uri, RDFS.label, Literal(full_name)))
 
         # Biography
-        biography_dict = orcid_profile["person"].get("biography")
-        if biography_dict:
-            biography = biography_dict.get("content")
-            if biography:
-                graph.add((person_uri, VIVO.overview, Literal(biography)))
+        biography = safe_get(orcid_profile, "person", "biography", "content")
+        if biography:
+            graph.add((person_uri, VIVO.overview, Literal(biography)))
 
         # Other identifiers
         # Default VIVO-ISF only supports a limited number of identifier types.
-        ext_ids_dict = orcid_profile["person"].get("external-identifiers")
-        if ext_ids_dict:
-            external_identifiers = ext_ids_dict.get("external-identifier", [])
-            for external_identifier in external_identifiers:
-                # Scopus ID
-                if external_identifier["external-id-type"] == "Scopus Author ID":
-                    graph.add((person_uri, VIVO.scopusId, Literal(external_identifier["external-id-value"])))
+        external_identifiers = safe_get(orcid_profile, "person", "external-identifiers", "external-identifier") or []
+        for external_identifier in external_identifiers:
+            # Scopus ID
+            if external_identifier.get("external-id-type") == "Scopus Author ID":
+                graph.add((person_uri, VIVO.scopusId, Literal(external_identifier.get("external-id-value"))))
 
-                # ISI Research ID
-                if external_identifier["external-id-type"] == "ResearcherID":
-                    graph.add((person_uri, VIVO.researcherId, Literal(external_identifier["external-id-value"])))
+            # ISI Research ID
+            if external_identifier.get("external-id-type") == "ResearcherID":
+                graph.add((person_uri, VIVO.researcherId, Literal(external_identifier.get("external-id-value"))))
 
         # Keywords
-        keywords_dict = orcid_profile["person"].get("keywords")
-        if keywords_dict:
-            keywords = keywords_dict.get("keyword", [])
-            for keyword in keywords:
-                keywords_content = keyword["content"]
-                if keywords_content:
-                    for keyword_content in keywords_content.split(", "):
-                        graph.add((person_uri, VIVO.freetextKeyword, Literal(keyword_content)))
+        keywords = safe_get(orcid_profile, "person", "keywords", "keyword") or []
+        for keyword in keywords:
+            keywords_content = keyword.get("content")
+            if keywords_content:
+                for keyword_content in keywords_content.split(", "):
+                    graph.add((person_uri, VIVO.freetextKeyword, Literal(keyword_content)))
 
         # Following is vcard bio information
 
@@ -78,12 +72,11 @@ class BioCrosswalk:
             add_main_vcard = True
 
         # Websites
-        urls_dict = orcid_profile["person"].get("researcher-urls")
-        if urls_dict:
-            researcher_urls = urls_dict.get("researcher-url", [])
-            for researcher_url in researcher_urls:
-                url = researcher_url["url"]["value"]
-                url_name = researcher_url["url-name"]
+        researcher_urls = safe_get(orcid_profile, "person", "researcher-urls", "researcher-url") or []
+        for researcher_url in researcher_urls:
+            url = safe_get(researcher_url, "url", "value")
+            if url:
+                url_name = researcher_url.get("url-name")
                 vcard_website_uri = self.identifier_strategy.to_uri(VCARD.URL, {"url": url})
                 graph.add((vcard_website_uri, RDF.type, VCARD.URL))
                 graph.add((vcard_uri, VCARD.hasURL, vcard_website_uri))

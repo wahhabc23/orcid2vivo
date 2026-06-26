@@ -1,6 +1,6 @@
 from .vivo_namespace import VIVO, OBO, FOAF, VCARD
 from rdflib import RDF, RDFS, XSD, Literal
-from .utility import add_date, add_date_interval
+from .utility import add_date, add_date_interval, safe_get
 
 
 class FundingCrosswalk:
@@ -9,14 +9,13 @@ class FundingCrosswalk:
         self.create_strategy = create_strategy
 
     def crosswalk(self, orcid_profile, person_uri, graph):
-        activities = orcid_profile.get("activities-summary") or {}
-        fundings = activities.get("fundings") or {}
+        funding_groups = safe_get(orcid_profile, "activities-summary", "fundings", "group") or []
         # Funding
-        for funding_group in fundings.get("group") or []:
+        for funding_group in funding_groups:
             for funding in funding_group.get("funding-summary") or []:
                 if funding.get("type") == "GRANT":
 
-                        title = funding["title"]["title"]["value"]
+                        title = safe_get(funding, "title", "title", "value")
                         grant_uri = self.identifier_strategy.to_uri(VIVO.Grant, {"title": title})
                         # Type
                         graph.add((grant_uri, RDF.type, VIVO.Grant))
@@ -52,8 +51,8 @@ class FundingCrosswalk:
                                 graph.add((grant_uri, VIVO.totalAwardAmount, Literal(award_amount)))
 
                         # Awarded by
-                        if "organization" in funding:
-                            organization_name = funding["organization"]["name"]
+                        organization_name = safe_get(funding, "organization", "name")
+                        if organization_name:
                             organization_uri = self.identifier_strategy.to_uri(FOAF.Organization,
                                                                                {"name": organization_name})
                             graph.add((grant_uri, VIVO.assignedBy, organization_uri))
@@ -62,26 +61,25 @@ class FundingCrosswalk:
                                 graph.add((organization_uri, RDFS.label, Literal(organization_name)))
 
                         # Identifiers
-                        if "external-ids" in funding and funding.get("external-ids"):
-                            for external_identifier in funding["external-ids"]["external-id"]:
-                                if "funding-external-identifier-value" in external_identifier:
-                                    graph.add((grant_uri, VIVO.sponsorAwardId,
-                                               Literal(external_identifier["external-id-value"])))
-                                identifier_url = (external_identifier.get("external-id-url", {}) or {}).get("value")
-                                if identifier_url:
-                                    vcard_uri = self.identifier_strategy.to_uri(VCARD.Kind, {"url": identifier_url})
-                                    graph.add((vcard_uri, RDF.type, VCARD.Kind))
-                                    # Has contact info
-                                    graph.add((grant_uri, OBO.ARG_2000028, vcard_uri))
-                                    # Url vcard
-                                    vcard_url_uri = self.identifier_strategy.to_uri(VCARD.URL, {"vcard_uri": vcard_uri})
-                                    graph.add((vcard_url_uri, RDF.type, VCARD.URL))
-                                    graph.add((vcard_uri, VCARD.hasURL, vcard_url_uri))
-                                    graph.add((vcard_url_uri, VCARD.url, Literal(identifier_url, datatype=XSD.anyURI)))
+                        external_identifiers = safe_get(funding, "external-ids", "external-id") or []
+                        for external_identifier in external_identifiers:
+                            if "funding-external-identifier-value" in external_identifier or "external-id-value" in external_identifier:
+                                graph.add((grant_uri, VIVO.sponsorAwardId,
+                                           Literal(external_identifier.get("external-id-value"))))
+                            identifier_url = safe_get(external_identifier, "external-id-url", "value")
+                            if identifier_url:
+                                vcard_uri = self.identifier_strategy.to_uri(VCARD.Kind, {"url": identifier_url})
+                                graph.add((vcard_uri, RDF.type, VCARD.Kind))
+                                # Has contact info
+                                graph.add((grant_uri, OBO.ARG_2000028, vcard_uri))
+                                # Url vcard
+                                vcard_url_uri = self.identifier_strategy.to_uri(VCARD.URL, {"vcard_uri": vcard_uri})
+                                graph.add((vcard_url_uri, RDF.type, VCARD.URL))
+                                graph.add((vcard_uri, VCARD.hasURL, vcard_url_uri))
+                                graph.add((vcard_url_uri, VCARD.url, Literal(identifier_url, datatype=XSD.anyURI)))
 
     @staticmethod
     def _get_date_parts(field_name, funding):
-        date = funding.get(field_name, {}) or {}
-        return (date.get("year", {}) or {}).get("value"), \
-               (date.get("month", {}) or {}).get("value"), \
-               (date.get("day", {}) or {}).get("value")
+        return safe_get(funding, field_name, "year", "value"), \
+               safe_get(funding, field_name, "month", "value"), \
+               safe_get(funding, field_name, "day", "value")

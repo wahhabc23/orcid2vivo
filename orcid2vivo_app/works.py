@@ -7,7 +7,7 @@ import bibtexparser
 from bibtexparser.bparser import BibTexParser
 from bibtexparser.latexenc import unicode_to_latex, unicode_to_crappy_latex1, unicode_to_crappy_latex2
 import itertools
-from .utility import add_date
+from .utility import add_date, safe_get
 
 work_type_map = {
     "BOOK": BIBO["Book"],
@@ -95,12 +95,11 @@ class WorksCrosswalk:
 
         # Note that datacite records were considered, but not found to have additional/better metadata.
 
-        person_surname = orcid_profile.get("person", {}).get("name", {}).get("family-name", {}).get("value", "")
+        person_surname = safe_get(orcid_profile, "person", "name", "family-name", "value", default="")
 
         # Publications
-        activities = orcid_profile.get("activities-summary") or {}
-        works = activities.get("works") or {}
-        for work_group in works.get("group") or []:
+        work_groups = safe_get(orcid_profile, "activities-summary", "works", "group") or []
+        for work_group in work_groups:
             for work in work_group.get("work-summary") or []:
                 path = work.get("path")
                 if path:
@@ -298,7 +297,7 @@ class WorksCrosswalk:
                 if identifier_url:
                     self._add_work_url(identifier_url, work_uri, graph)
 
-            orcid_url = (work.get("url", {}) or {}).get("value")
+            orcid_url = safe_get(work, "url", "value")
             if orcid_url and WorksCrosswalk._use_url(orcid_url):
                 self._add_work_url(orcid_url, work_uri, graph)
             bibtex_url = bibtex.get("link")
@@ -322,7 +321,7 @@ class WorksCrosswalk:
                     if "issn" in bibtex:
                         issns = [bibtex["issn"]]
                 else:
-                    journal = (work.get("journal-title", {}) or {}).get("value")
+                    journal = safe_get(work, "journal-title", "value")
 
             if journal:
                 journal_class = journal_map.get(work_type, BIBO.Journal)
@@ -344,7 +343,7 @@ class WorksCrosswalk:
                         graph.add((book_uri, RDFS.label, Literal(book_title)))
 
             if work_type in ("CONFERENCE_PAPER",):
-                proceeding = bibtex.get("journal") or (work.get("journal-title", {}) or {}).get("value")
+                proceeding = bibtex.get("journal") or safe_get(work, "journal-title", "value")
                 if proceeding:
                     proceeding_uri = self.identifier_strategy.to_uri(BIBO.Proceedings, {"name": proceeding})
                     graph.add((work_uri, VIVO.hasPublicationVenue, proceeding_uri))
@@ -373,7 +372,7 @@ class WorksCrosswalk:
     @staticmethod
     def _parse_bibtex(work):
         bibtex = {}
-        if work and (work.get("citation", {}) or {}).get("citation-type") == "BIBTEX":
+        if work and safe_get(work, "citation", "citation-type") == "BIBTEX":
             citation = work["citation"]["citation-value"]
             # Need to add \n for bibtexparser to work
             curly_level = 0
@@ -399,19 +398,14 @@ class WorksCrosswalk:
 
     @staticmethod
     def _get_orcid_title(work):
-        return join_if_not_empty((work["title"]["title"]["value"],
-                                  (work["title"].get("subtitle") or {}).get("value")), ": ")
+        return join_if_not_empty((safe_get(work, "title", "title", "value"),
+                                  safe_get(work, "title", "subtitle", "value")), ": ")
 
     @staticmethod
     def _get_orcid_publication_date(work):
-        year = None
-        month = None
-        day = None
-        publication_date = work.get("publication-date")
-        if publication_date:
-            year = publication_date["year"]["value"] if publication_date.get("year") else None
-            month = publication_date["month"]["value"] if publication_date.get("month") else None
-            day = publication_date["day"]["value"] if publication_date.get("day") else None
+        year = safe_get(work, "publication-date", "year", "value")
+        month = safe_get(work, "publication-date", "month", "value")
+        day = safe_get(work, "publication-date", "day", "value")
         if not year and not month and not day:
             return None
         return year, month, day
@@ -440,9 +434,9 @@ class WorksCrosswalk:
         external_identifiers = work.get("external-ids")
         if external_identifiers:
             for external_identifier in (external_identifiers.get("external-id") or []):
-                if external_identifier["external-id-value"] is not None:
-                    ids[external_identifier["external-id-type"].upper()] = \
-                        external_identifier["external-id-value"]
+                if external_identifier.get("external-id-value") is not None:
+                    ids[external_identifier.get("external-id-type", "").upper()] = \
+                        external_identifier.get("external-id-value")
         return ids
 
     @staticmethod
@@ -459,9 +453,9 @@ class WorksCrosswalk:
     @staticmethod
     def _get_orcid_contributors(work):
         contributors = []
-        for contributor in (work.get("contributors") or {}).get("contributor", []):
+        for contributor in safe_get(work, "contributors", "contributor") or []:
             # Last name, first name
-            credit_name = (contributor.get("credit-name") or {}).get("value")
+            credit_name = safe_get(contributor, "credit-name", "value")
             # Some entries will not have a credit name, meaning the entry is for the person.
             # Using None, None to indicate the person.
             first_name = None
@@ -470,7 +464,7 @@ class WorksCrosswalk:
                 # Normalize with BibtexParser's getnames()
                 clean_name = bibtexparser.customization.getnames([credit_name])[0]
                 (first_name, surname) = WorksCrosswalk._parse_reversed_name(clean_name)
-            role = (contributor.get("contributor-attributes", {}) or {}).get("contributor-role")
+            role = safe_get(contributor, "contributor-attributes", "contributor-role")
             contributors.append((first_name, surname, contributor_map.get(role, VIVO.Authorship)))
         return contributors
 

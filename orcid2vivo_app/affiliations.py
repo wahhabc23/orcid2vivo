@@ -2,7 +2,7 @@ from .vivo_namespace import VIVO, OBO
 from rdflib import RDFS, RDF, Literal
 from .vivo_namespace import FOAF
 from .vivo_uri import to_hash_identifier
-from .utility import add_date, add_date_interval
+from .utility import add_date, add_date_interval, safe_get
 import orcid2vivo_app.vivo_namespace as ns
 
 
@@ -13,27 +13,26 @@ class AffiliationsCrosswalk:
 
     def crosswalk(self, orcid_profile, person_uri, graph):
         # Education
-        activities = orcid_profile.get("activities-summary") or {}
-        educations = activities.get("educations") or {}
-        for education in educations.get("education-summary") or []:
+        educations = safe_get(orcid_profile, "activities-summary", "educations", "education-summary") or []
+        for education in educations:
             # Gather some values
                 degree_name = education.get("role-title")
-                organization_name = education["organization"]["name"]
-                start_date_year = (education["start-date"] or {}).get("year", {}).get("value")
-                end_date_year = (education["end-date"] or {}).get("year", {}).get("value")
+                organization_name = safe_get(education, "organization", "name")
+                start_date_year = safe_get(education, "start-date", "year", "value")
+                end_date_year = safe_get(education, "end-date", "year", "value")
 
                 # Organization
                 organization_uri = self.identifier_strategy.to_uri(FOAF.Organization, {"name": organization_name})
                 if self.create_strategy.should_create(FOAF.Organization, organization_uri):
                     graph.add((organization_uri, RDF.type, FOAF.Organization))
                     graph.add((organization_uri, RDFS.label, Literal(organization_name)))
-                    if "address" in education["organization"]:
-                        city = education["organization"]["address"]["city"]
-                        state = education["organization"]["address"]["region"]
-                    address_uri = ns.D[to_hash_identifier("geo", (city, state))]
-                    graph.add((address_uri, RDF.type, VIVO.GeographicLocation))
-                    graph.add((organization_uri, OBO.RO_0001025, address_uri))
-                    graph.add((address_uri, RDFS.label, Literal("%s, %s" % (city, state))))
+                    city = safe_get(education, "organization", "address", "city")
+                    state = safe_get(education, "organization", "address", "region")
+                    if city and state:
+                        address_uri = ns.D[to_hash_identifier("geo", (city, state))]
+                        graph.add((address_uri, RDF.type, VIVO.GeographicLocation))
+                        graph.add((organization_uri, OBO.RO_0001025, address_uri))
+                        graph.add((address_uri, RDFS.label, Literal("%s, %s" % (city, state))))
 
                 # Output of educational process
                 educational_process_uri = self.identifier_strategy.to_uri(VIVO.EducationalProcess,

@@ -18,6 +18,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 import requests
+from .utility import safe_get
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def get_publications_by_orcid(
 
 def _normalise(hit: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     names = hit.get("names", {})
-    title_data = hit.get("title", {}).get("value", "")
+    title_data = safe_get(hit, "title", "value", default="")
     if not title_data:
         return None
 
@@ -117,8 +118,8 @@ def _normalise(hit: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "year": year,
         "authors": authors,
         "journal": pub_info.get("sourceTitle"),
-        "abstract": hit.get("abstract", {}).get("value"),
-        "citations": hit.get("citations", [{}])[0].get("count") if hit.get("citations") else None,
+        "abstract": safe_get(hit, "abstract", "value"),
+        "citations": hit.get("citations", [{}])[0].get("count") if hit.get("citations") and isinstance(hit.get("citations", [{}])[0], dict) else None,
         "type": hit.get("types", [None])[0] if hit.get("types") else None,
         "url": None,
     }

@@ -8,6 +8,22 @@ import re
 logger = logging.getLogger(__name__)
 
 
+def safe_get(d, *keys, default=None):
+    """
+    Safely access nested dictionary keys.
+    If any intermediate key is missing or explicitly None, return default.
+    """
+    if d is None:
+        return default
+    
+    current = d
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+        if current is None:
+            return default
+    return current
 def num_to_str(num):
     """
     Converts a number to a string and removes leading 0s.
