@@ -263,7 +263,7 @@ class WorksCrosswalk:
             start_page = None
             end_page = None
             if pages and "-" in pages:
-                (start_page, end_page) = re.split(" *-+ *", pages, maxsplit=2)
+                (start_page, end_page) = re.split(" *-+ *", pages, maxsplit=1)
             if start_page:
                 graph.add((work_uri, BIBO.pageStart, Literal(start_page)))
             if end_page:
@@ -387,7 +387,9 @@ class WorksCrosswalk:
                     new_citation += "\n"
             parser = BibTexParser()
             parser.customization = WorksCrosswalk._bibtex_customizations
-            bibtex = bibtexparser.loads(new_citation, parser=parser).entries[0]
+            parsed_bibtex = bibtexparser.loads(new_citation, parser=parser)
+            if parsed_bibtex.entries:
+                bibtex = parsed_bibtex.entries[0]
         return bibtex
 
     @staticmethod

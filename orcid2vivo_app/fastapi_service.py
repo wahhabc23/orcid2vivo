@@ -185,11 +185,9 @@ class OrcidService:
                 "external_publication_count": len(publications),
             }
 
-        except ValueError as ve:
-            logger.warning("Validation error processing %s: %s", orcid_id, ve)
-            raise ve
+
         except OrcidProcessingError:
             raise
         except Exception as e:
-            logger.error("Pipeline failed for ORCID %s: %s", orcid_id, str(e))
+            logger.exception("Pipeline failed for ORCID %s", orcid_id)
             raise OrcidProcessingError(f"Internal processing failed: {str(e)}") from e
